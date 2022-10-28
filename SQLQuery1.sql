@@ -134,14 +134,14 @@ GO
 
 ----------------VALIDACION SECCION_EXISTENTE ---------
 GO
-CREATE FUNCTION Seccion_existente(@cadena varchar(1))
+CREATE FUNCTION Seccion_existente(@cadena varchar(1),@id_curso int)
 RETURNS BIT
 AS 
 BEGIN
 	DECLARE @valido BIT;
 	-------validar que no exista el id
 
-	IF EXISTS (SELECT id_habilitado FROM CURSO_HABILITADO WHERE seccion = @cadena)
+	IF EXISTS (SELECT id_habilitado FROM CURSO_HABILITADO WHERE seccion = @cadena AND id_curso=@id_curso)
 	BEGIN
 	---------existe
 		SET @valido=1
@@ -425,6 +425,38 @@ GO
 
 SELECT.dbo.ValidarNotasIngresadas(2)
 
+
+
+
+
+---------------------VALIDAR SI EXISTE ID CARREAR -----------------
+GO
+CREATE FUNCTION Validar_IdCarrera(@id_carrera int)
+RETURNS BIT
+AS 
+BEGIN
+	DECLARE @valido BIT;
+	
+	IF EXISTS (SELECT 1 FROM CARRERA WHERE id_carrera=@id_carrera)---SI EXISTE el codigo de carrera
+	BEGIN
+	---------existe
+		SET @valido=1
+	END
+	ELSE
+	BEGIN
+	---------no existe
+		SET @valido=0
+	END
+	RETURN @valido
+
+END
+GO
+
+
+SELECT.dbo.Validar_IdCarrera(10)
+
+
+
 ---------------PROCEDIMIENTOS-------------------------
 
 ---------------------CREAR CARRERA-----------------
@@ -529,7 +561,7 @@ CREATE PROCEDURE Habilitar_Curso(@id_curso int, @ciclo varchar(2), @siif int, @c
 AS
 BEGIN
 	
-	if(dbo.Seccion_existente(@seccion)=0)----si no existe
+	if(dbo.Seccion_existente(@seccion, @id_curso)=0)----si no existe
 	BEGIN
 		if @ciclo IN ('1S','2S','VJ','VD')
 		BEGIN
@@ -798,12 +830,227 @@ END
 GO
 
 
+
+------------------------------CONSULTAS ----------------------
+---------------------CONSULTA 1. CONSULTAR PENSUM--------------------
+GO
+CREATE PROCEDURE ConsultarPensum(@id_carrera int)
+AS
+BEGIN
+
+	
+	IF(dbo.Validar_IdCarrera(@id_carrera)=1)-----si existe
+	BEGIN
+		SELECT CURSO.id_curso as "Codigo del curso", CURSO.nombre as "Nombre del curso", "Obligatorio" = CASE WHEN CURSO.obligatorio =1 
+																											  THEN 'Si'
+																											  WHEN CURSO.obligatorio=0
+																											  THEN 'No' END, CURSO.creditos_necesarios as "Creditos Necesarios" FROM CURSO
+		INNER JOIN CARRERA ON CARRERA.id_carrera=CURSO.id_carrera
+		WHERE CARRERA.id_carrera=0
+		UNION
+		SELECT CURSO.id_curso, CURSO.nombre,"Obligatorio" = CASE WHEN CURSO.obligatorio =1 
+																											  THEN 'Si'
+																											  WHEN CURSO.obligatorio=0
+																											  THEN 'No' END, CURSO.creditos_necesarios FROM CURSO
+		INNER JOIN CARRERA ON CARRERA.id_carrera=CURSO.id_carrera
+		WHERE CARRERA.id_carrera=@id_carrera
+	END
+	ELSE
+	BEGIN
+		SELECT 'EL ID DE LA CARRERA INGRESADA NO EXISTE' AS ERROR;
+	END
+
+END 
+GO
+
+--------------CONSULTA 2. CONSULTAR ESTUDIANTE----------------------------
+
+GO
+CREATE PROCEDURE ConsultarEstudiante(@carnet int)
+AS
+BEGIN
+
+	
+	IF(dbo.Validar_Carnet(@carnet)=1)-----si existe
+	BEGIN
+		SELECT ESTUDIANTE.carnet as Carnet,  concat(ESTUDIANTE.nombre, ' ', ESTUDIANTE.apellido) as "Nombre Completo", ESTUDIANTE.fecha_nacimiento as "Fecha de nacimiento", ESTUDIANTE.correo as "Correo", ESTUDIANTE.telefono as Telefono, ESTUDIANTE.direccion as Direccion, ESTUDIANTE.dpi as Dpi, CARRERA.nombre as Carrera,ESTUDIANTE.creditos AS Creditos  FROM ESTUDIANTE
+		INNER JOIN CARRERA ON CARRERA.id_carrera=ESTUDIANTE.id_carrera
+		WHERE ESTUDIANTE.carnet=@carnet
+
+	END
+	ELSE
+	BEGIN
+		SELECT 'EL CARNET INGRESADO NO EXISTE' AS ERROR;
+	END
+
+END 
+GO
+
+
+
+--------------CONSULTA 3. CONSULTAR DOCENTE----------------------------
+
+GO
+CREATE PROCEDURE ConsultarDocente(@siif int)
+AS
+BEGIN
+
+	
+	IF(dbo.Docente_existente(@siif)=1)-----si existe
+	BEGIN
+		SELECT DOCENTE.siif as "Registro SIIF",  concat(DOCENTE.nombre, ' ', DOCENTE.apellido) as "Nombre Completo", DOCENTE.nacimiento as "Fecha de nacimiento", DOCENTE.correo as "Correo", DOCENTE.telefono as Telefono, DOCENTE.direccion as Direccion, DOCENTE.dpi as Dpi  FROM DOCENTE
+		WHERE DOCENTE.siif=@siif
+
+	END
+	ELSE
+	BEGIN
+		SELECT 'EL CODIGO DOCENTE INGRESADO NO EXISTE' AS ERROR;
+	END
+
+END 
+GO
+
+----------------CONSULTA 4 . CONSULTAR ESTUDIANTES ASIGNADOS----------
+
+
+GO
+CREATE PROCEDURE ConsultarEstudiantesAsignados(@id_habilitado int)
+AS
+BEGIN
+
+	
+	IF(dbo.Validar_CursoHabilitado(@id_habilitado)=1)-----si existe
+	BEGIN
+		SELECT ASIGNACION_CURSO.carnet as "Carnet", concat(ESTUDIANTE.nombre, ' ', ESTUDIANTE.apellido) AS "Nombre Completo", ESTUDIANTE.creditos as "Creditos que posee" FROM ASIGNACION_CURSO 
+		inner join CURSO_HABILITADO on CURSO_HABILITADO.id_habilitado=ASIGNACION_CURSO.id_habilitado
+		inner join ESTUDIANTE ON ESTUDIANTE.carnet=ASIGNACION_CURSO.carnet
+		INNER JOIN CURSO ON CURSO.id_curso = CURSO_HABILITADO.id_curso
+		WHERE CURSO_HABILITADO.id_habilitado=@id_habilitado
+
+	END
+	ELSE
+	BEGIN
+		SELECT 'EL CURSO INGRESADO NO ESTA HABILITADO' AS ERROR;
+	END
+
+END 
+GO
+
+
+
+----------------CONSULTA 5. CONSULTAR APROBACIONES ----------
+
+
+GO
+CREATE PROCEDURE ConsultarAprobaciones(@id_habilitado int)
+AS
+BEGIN
+
+	
+	IF(dbo.Validar_CursoHabilitado(@id_habilitado)=1)-----si existe
+	BEGIN
+
+		SELECT CURSO.id_curso as "Codigo de curso", ASIGNACION_CURSO.carnet AS Carnet, concat(ESTUDIANTE.nombre, ' ', ESTUDIANTE.apellido) as "Nombre Completo", "Aprobado/Desaprobado" = CASE WHEN NOTAS_ESTUDIANTE.nota>=61 
+																																														  THEN 'APROBADO'
+																																														  WHEN NOTAS_ESTUDIANTE.nota<61
+																																														  THEN 'DESAPROBADO' END FROM ASIGNACION_CURSO 
+		inner join CURSO_HABILITADO on CURSO_HABILITADO.id_habilitado=ASIGNACION_CURSO.id_habilitado
+		INNER JOIN ESTUDIANTE ON ESTUDIANTE.carnet=ASIGNACION_CURSO.carnet
+		INNER JOIN CURSO ON CURSO.id_curso=CURSO_HABILITADO.id_curso
+		INNER JOIN NOTAS_ESTUDIANTE ON NOTAS_ESTUDIANTE.carnet=ESTUDIANTE.carnet
+		WHERE NOTAS_ESTUDIANTE.id_habilitado=@id_habilitado and ASIGNACION_CURSO.id_habilitado=@id_habilitado
+
+	END
+	ELSE
+	BEGIN
+		SELECT 'EL CURSO INGRESADO NO ESTA HABILITADO' AS ERROR;
+	END
+
+END 
+GO
+
+
+----------------CONSULTA 6. CONSULTAR ACTA ----------
+
+GO
+CREATE PROCEDURE ConsultarActa(@id_habilitado int)
+AS
+BEGIN
+
+	
+	IF(dbo.Validar_CursoHabilitado(@id_habilitado)=1)-----si existe
+	BEGIN
+
+		SELECT CURSO.id_curso as "Codigo de curso", CURSO_HABILITADO.seccion AS "Sección", "Ciclo" = CASE WHEN CURSO_HABILITADO.ciclo>='1S' 
+																										 THEN 'PRIMER SEMESTRE'
+																										 WHEN CURSO_HABILITADO.ciclo = '2S'
+																										 THEN 'SEGUNDO SEMESTRE'
+																										 WHEN CURSO_HABILITADO.ciclo = 'VJ'
+																										 THEN 'VACACIONES DE JUNIO'
+																										 WHEN CURSO_HABILITADO.ciclo = 'VD'
+																										 THEN 'VACACIONES DE DICIEMBRE'END, CURSO_HABILITADO.año as "Año", CURSO_HABILITADO.asignados as "Cantidad de estudiantes que llevaron el curso", ACTA.fecha_hora as "Fecha y hora de generado" FROM CURSO_HABILITADO 
+		INNER JOIN CURSO ON CURSO.id_curso=CURSO_HABILITADO.id_curso
+		INNER JOIN ACTA ON ACTA.id_habilitado = CURSO_HABILITADO.id_habilitado 
+		where ACTA.id_habilitado=@id_habilitado 
+
+	END
+	ELSE
+	BEGIN
+		SELECT 'EL CURSO INGRESADO NO ESTA HABILITADO' AS ERROR;
+	END
+
+END 
+GO
+
+----------------CONSULTA 7. TASA DE DESASIGNACION ----------
+
+GO
+CREATE PROCEDURE ConsultarTasa(@id_habilitado int, @seccion varchar(1))
+AS
+BEGIN
+
+	
+	IF(dbo.Validar_CursoHabilitado(@id_habilitado)=1)-----si existe
+	BEGIN
+		
+
+
+		SELECT CURSO.id_curso as "Codigo de curso", CURSO_HABILITADO.seccion AS "Sección", "Ciclo" = CASE WHEN CURSO_HABILITADO.ciclo>='1S' 
+																										 THEN 'PRIMER SEMESTRE'
+																										 WHEN CURSO_HABILITADO.ciclo = '2S'
+																										 THEN 'SEGUNDO SEMESTRE'
+																										 WHEN CURSO_HABILITADO.ciclo = 'VJ'
+																										 THEN 'VACACIONES DE JUNIO'
+																										 WHEN CURSO_HABILITADO.ciclo = 'VD'
+																										 THEN 'VACACIONES DE DICIEMBRE'END, CURSO_HABILITADO.año as "Año", CURSO_HABILITADO.asignados as "Cantidad de estudiantes que llevaron el curso", count(DESASIGNACION_CURSO.carnet) as "Cantidad de estudiantes que se desasignaron",((100*count(DESASIGNACION_CURSO.carnet))/CURSO_HABILITADO.cupo) as "Porcentaje de desasignacion" FROM CURSO_HABILITADO 
+		INNER JOIN CURSO ON CURSO.id_curso=CURSO_HABILITADO.id_curso
+		INNER JOIN DESASIGNACION_CURSO ON DESASIGNACION_CURSO.id_habilitado = CURSO_HABILITADO.id_habilitado 
+		where DESASIGNACION_CURSO.id_habilitado=@id_habilitado 
+		group by CURSO.id_curso, CURSO_HABILITADO.seccion,CURSO_HABILITADO.ciclo,CURSO_HABILITADO.año, CURSO_HABILITADO.asignados, CURSO_HABILITADO.cupo
+		ORDER BY count(DESASIGNACION_CURSO.carnet)
+		
+
+	END
+	ELSE
+	BEGIN
+		SELECT 'EL CURSO INGRESADO NO ESTA HABILITADO' AS ERROR;
+	END
+
+END 
+GO
+
+
+
+EXECUTE ConsultarTasa 2,'C'
+
+
 -------------LLAMADAS A PROCEDIMIENTOS
 EXECUTE Crear_Carrera 'AreaComun'
 EXECUTE Crear_Carrera 'Sistemas'
 EXECUTE Crear_Carrera 'Civil'
 EXECUTE Crear_Carrera 'Industrial'
 EXECUTE Crear_Carrera 'Ambiental'
+
 
 EXECUTE Registrar_Estudiante 201503841,'Suseth','Godinez','29/07/1996','susethgg@gmail.com',54205719,'26 calle 9-11 fuentes del valle I',3000822740101,1
 EXECUTE Registrar_Estudiante 201705896,'Aneli','Ramirez','27/07/1982','aneliVicente@gmail.com',42780956,'San Marcos',1254852871212,1
@@ -866,19 +1113,51 @@ EXECUTE Crear_curso 663,'Legisacion Amibental',5,3,1,4
 
 
 EXECUTE Habilitar_Curso 774,'1S',123456789,110,A  ------id 1 bases
-EXECUTE Habilitar_Curso 120,'VD',123456789,150,C   ------ id 2 mate
+EXECUTE Habilitar_Curso 120,'VD',78965431,90,A   ------ id 2 mate
+EXECUTE Habilitar_Curso 017,'VD',12586453,90,C   ------ id 3 Social humanistica
+EXECUTE Habilitar_Curso 039,'1S',4520006,60,D   ------ id 4 Deportes
+EXECUTE Habilitar_Curso 080,'VD',10528576,100,F   ------ id 5 tOPOLOGRAFIA 1   //CIVIL
+EXECUTE Habilitar_Curso 635,'1S',12586453,95,E   ------ id 6 Climatologia 1   //AMBINTAL
+EXECUTE Habilitar_Curso 250,'1S',10528576,90,A   ------ id 7 Mecanica de fluidos 1 //INDUSTRIAL
 
-EXECUTE Agregar_Horario 2,7,'9:00-10:40'   ----agregar horario a habilitado 2 matematica
+
+
+
+EXECUTE Agregar_Horario 2,1,'9:00-10:40' 
+EXECUTE Agregar_Horario 2,2,'9:00-10:40'
+EXECUTE Agregar_Horario 2,3,'9:00-10:40'
+EXECUTE Agregar_Horario 2,5,'9:00-10:40'----agregar horario a habilitado 2 matematica
+
+
+EXECUTE Agregar_Horario 4,1,'7:00-9:00' 
+EXECUTE Agregar_Horario 4,5,'7:00-9:00'----agregar horario a habilitado 4 DEPORTES
+
 
 EXECUTE Asignando_curso 2,201503841   ----asignando a matematica
+EXECUTE Asignando_curso 2,201705896   
+EXECUTE Asignando_curso 2,200275789   
+EXECUTE Asignando_curso 2,201721456
+EXECUTE Asignando_curso 2,201945875
 
-EXECUTE Quitando_curso 2,201503841
+EXECUTE Quitando_curso 2,201945875
 
+
+
+-------------ingresando notas de mate 1
 EXECUTE IngresarNota 2,201503841,75.6
+EXECUTE IngresarNota 2,201705896,45.5
+EXECUTE IngresarNota 2,200275789,62.7
+EXECUTE IngresarNota 2,201721456,90.5
 
 EXECUTE GenerarActa 2
 
 
+
+EXECUTE Asignando_curso 2,201503841   ----asignando a matematica
+EXECUTE Asignando_curso 2,201705896   
+EXECUTE Asignando_curso 2,200275789   
+EXECUTE Asignando_curso 2,201721456
+EXECUTE Asignando_curso 2,201945875
 
 
 
@@ -896,3 +1175,14 @@ SELECT * FROM NOTAS_ESTUDIANTE
 SELECT * FROM HISTORIAL
 SELECT * FROM ACTA
 
+
+
+
+-----------------------------CONSULTAS 
+EXECUTE ConsultarPensum 1
+EXECUTE ConsultarEstudiante 201503841
+EXECUTE ConsultarDocente 10528576
+EXECUTE ConsultarEstudiantesAsignados 2
+EXECUTE ConsultarAprobaciones 2
+EXECUTE ConsultarActa 2
+EXECUTE ConsultarTasa 2,'C'
